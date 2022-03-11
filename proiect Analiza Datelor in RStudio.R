@@ -1213,7 +1213,7 @@ ggplot(df) +
 rez <- rbind(round(discPower(tema_cluster[,2:21], tema_cluster[,1])$F_statistic, 4), round(discPower(tema_cluster[,2:21], tema_cluster[,1])$p_value, 4))
 
 
-#### Invatarea supervizata. Algoritmi de clasificare a datelor în mediul R ####
+#### Invatarea supervizata. Algoritmi de clasificare a datelor Ã®n mediul R ####
 tema_AD <- na.omit(tema_AD)
 
 # 1. Algoritmul k-means clustering
