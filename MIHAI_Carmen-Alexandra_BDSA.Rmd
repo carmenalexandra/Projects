@@ -1,0 +1,657 @@
+---
+title: "MIHAI_Carmen-Alexandra_BDSA"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r pachete, include=FALSE}
+pacheteBDSA <- c("knitr", "rmarkdown", "RColorBrewer", "scales", 
+                 "tidyverse","dplyr", "plyr", "ggplot2", "gganimate", "Rmisc", 
+                 "Hmisc","randomForest", "rattle", "rpart.plot", "caret", 
+                 "gmodels", "PresenceAbsence", 
+                 "ROCR", "ca", "plotROC", "ROSE", 
+                 "devtools","rpart", "readxl", "ellipsis","gridExtra")
+```
+
+```{r incarcare pachete, include=FALSE}
+sapply(pacheteBDSA, library, character.only = T)
+```
+
+```{r incarcare date, include=FALSE}
+date2022 <- read_csv("survey_results_public.csv")
+
+schema2022 <- read_csv("survey_results_schema.csv")
+```
+
+Vizualizarea datelor si a dimensiunii seturilor de date ce urmeaza a fi utilizate in analiza.
+```{r}
+glimpse(date2022)
+glimpse(schema2022)
+```
+
+```{r}
+# View(date2022)
+dim(date2022)
+
+# View(schema2022)
+dim(schema2022)
+```
+\
+\
+**Partea I**. Aplicarea analizei corespondentelor pe variabilele EdLevel (nivel de educatie) si TimeSearching (timp cautare). \
+Prin intermediul acestui model urmarim sa analizam cat de mult timp petrec developerii intr-o singura zi pentru a cauta raspunsuri sau solutii pentru problemele intalnite atunci cand lucreaza, in functie de nivelul de educatie pe care il au.
+
+```{r}
+table(date2022$EdLevel)
+```
+
+```{r atasare date, include=FALSE}
+attach(date2022)
+```
+
+In continuarea analizei, vom alege urmatoarele nivele de educatie: 
+Associate degree, Bachelor's degree, Master's degree, Other doctoral degree si Professional degree.
+```{r}
+ed <- c("Associate degree (A.A., A.S., etc.)", "Bachelor’s degree (B.A., B.S., B.Eng., etc.)", "Master’s degree (M.A., M.S., M.Eng., MBA, etc.)", "Other doctoral degree (Ph.D., Ed.D., etc.)", "Professional degree (JD, MD, etc.)")
+# length(ed)
+```
+
+Dupa alegerea nivelelor de educatie ce urmeaza sa fie utilizate in analiza, vom crea un subset de date pentru valorile corespunzatoare.
+```{r}
+date2022subset <- date2022 %>% 
+  filter(EdLevel %in% ed)
+
+dim(date2022subset)
+# View(date2022subset)
+```
+
+Incepem prin a analiza distributia respondentilor pe nivelele de educatie alese in subsetul de date, precum si distributia raspunsurilor oferite intrebarii referitoare la cat de mult timp petrec pentru a cauta raspunsuri sau solutii pentru probleme intalnite atunci cand lucreaza.
+```{r}
+table(date2022subset$EdLevel)
+table(date2022subset$TimeSearching)
+```
+
+Pentru o mai usoara vizualizare si procesare a variabilelor incluse in analizam, vom schimba etichetele variabilei EdLevel, astfel: \ 
+- Associate degree (A.A., A.S., etc.) - AD \
+- Bachelor’s degree (B.A., B.S., B.Eng., etc.) \
+- Master’s degree (M.A., M.S., M.Eng., MBA, etc.) \
+- Other doctoral degree (Ph.D., Ed.D., etc.) \
+- Professional degree (JD, MD, etc.) \
+Etichetele vor fi memorate intr-o noua variabila denumita EdLevel1, ce va fi utilizata in modelul de analiza a corespondentelor.
+```{r}
+date2022subset$EdLevel1 <- factor(date2022subset$EdLevel,
+                                   labels = c("AD", "BD", "MD", "PhD", "PD"))
+```
+
+```{r verif atribuire etichete, include=FALSE}
+table(date2022subset$EdLevel1)
+
+# verificam daca etichetele au fost bine atribuite
+table(date2022subset$EdLevel, date2022subset$EdLevel1)
+attach(date2022subset)
+```
+
+```{r}
+dim(date2022subset)
+# View(date2022subset)
+```
+
+Pentru o mai buna vizualizare a celor doua variabile, le vom reprezenta grafic:
+```{r}
+date2022subset %>%
+  filter(!is.na(TimeSearching)) %>% 
+  group_by(TimeSearching, EdLevel1) %>%
+  dplyr::summarise(n = n()) %>% 
+  mutate(freq = n/sum(n)) %>%
+  ggplot() +
+  theme_set(theme_gray()) +
+  geom_col(aes(x = reorder(EdLevel1, n), y = n, fill = TimeSearching)) +
+  labs(x = "Nivel educational",
+       y = "Numar respondenti",
+       caption = "Proiect AMD - BDSA") +
+  scale_fill_brewer(palette = "Set3") + 
+  ggtitle("Reprezentarea grafica a variabilelor TimeSearching si EdLevel") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10, color = "cadetblue4", face = "bold"))
+```
+
+Dupa schimbarea etichetelor si definirea noii variabile, urmeaza sa obtinem tabelul de contingenta al variabilelor TimeSearching si EdLevel1. Pentru aceasta, trebuie mai intai sa cream un model sub forma de tabel pe baza caruia sa putem aplica ulterior analiza corespondentelor.
+```{r}
+model_ac <- table(TimeSearching, EdLevel1)
+```
+
+```{r sts descrip TS, include=FALSE}
+summary(date2022subset$TimeSearching)
+View(model_ac)
+library("ca")
+```
+
+```{r}
+corespondente_TimeSearching <- ca(model_ac)
+summary(corespondente_TimeSearching)
+```
+Observam faptul ca prima dimensiune aduce o contributie de 60.1% din inertia totala, contributia celei de-a doua dimensiuni fiind de 31.2%. Astfel spus, contributia totala a celor doua dimensiuni este de 91.2% din inertia totala. \
+De asemenea, analizand valorile variabilei Mass pe randuri, iese in evidenta faptul ca cele mai mari mase din model sunt date de intervalele de cautare de 15-30 minute, 30-60 minute si 60-120 minute. Pentru coloane, interpretarea este asemanatoare, cele mai mari mase fiind date de nivelele de educatie BD (Bachelor's degree) si MD (Master's degree). \
+Analizand variabila denumita qlt, care denota calitatea de reprezentare a variabilelor pe harta simetrica, se observa faptul ca atat intervalele de timp, cat si nivelele de educatie sunt foarte bine reprezentate, avand valori foarte mari. \
+In ceea ce priveste inertia pe randuri, cea mai mare contributie la inertia totala o aduce intervalul de timp 60-120 minute, in cazul inertiei pe coloane, contributia cea mai mare fiind adusa de nivelul de educatie PhD. \
+In plus, este pus in evidenta faptul ca, dintre toate categoriile de raspuns, nivelul de educatie nu este bine reprezentat pe harta, avand o contributie la inertia totala considerabil mai mica fata de restul variabilelor. \
+
+
+Harta simetrica ne ajuta sa vizualizam modul in care au fost reprezentate variabilele in modelul de analiza a corespondentelor.
+```{r}
+plot(corespondente_TimeSearching, lines = c(FALSE, F), col = c("blueviolet", "brown"), col.lab = c("darkslateblue", "firebrick4"), main = "Harta simetrica a variabilelor TimeSearching si EdLevel", col.main = "cadetblue4")
+```
+
+In partea dreapta se afla respondentii care petrec cel mai mult timp cautand informatii necesare in rezolvarea problemelor intalnite la locul de munca, iar in partea stanga se regasesc cei care petrec cel mai putin timp. \
+Observam faptul ca variabila AD se apropie cel mai mult de un timp de cautare de peste 120 minute, iar variabila BD pare ca se apropie cel mai mult de un timp petrecut cautarii de raspunsuri/solutii de 30-60 minute. Desi variabila AD se apropie cel mai mult de un timp de peste 120 minute, mentionam ca aceasta nu este bine reprezentata pe harta, fapt confirmat de valoarea mica a calitatii reprezentarii pe harta simetrica. \
+In ceea ce priveste variabila PhD, remarcam o departare considerabila fata de profilul mediu al utilizatorilor, iar cel mai mult se apropie de acest profil respondetii care au BD. 
+
+
+Ca o masura de verificare a corectitudinii modelului ales, utilizam testul chi^2 si comparam valoarea p-value generata de acesta cu pragul de 0.05:
+```{r}
+chisq.test(model_ac)
+```
+
+Din valoarea p-value egala cu 0.01722, mai mica decat pragul de 0.05, putem afirma faptul ca modelul ales este corect, cele doua variabile fiind bine selectate pentru efectuarea acestui tip de analiza. 
+\
+\
+**Partea a II-a**. Aplicarea unui model de regresie logistica pentru a explica factorii care determina alegerea unui job bine platit in domeniul IT. \
+In cadrul acestei analize vom utiliza urmatoarele variabile pentru modelele de clasificatori: 
+
+- Wellpaid - variabila ce evidentiaza daca un job este bine platit sau nu 
+
+- Age - variabila care exprima grupurile de varsta in care se incadreaza fiecare respondent 
+
+- EdLevel - variabila care retine nivelul de educatie avut de catre respondenti 
+
+- YearsCodePro - variabila care afiseaza de cati ani codeaza developerii, strict in cadrul jobului 
+
+- WorkExp - variabila care evidentiaza numarul de ani de experienta 
+- RemoteWork - variabila care arata modul actual de lucru al respondentilor 
+
+In prima faza, pentru a putea defini corect modelul, variabilele alese trebuie mai intai sa fie prelucrate. \
+\
+1. Variabila Age:
+```{r}
+table(date2022$Age)
+```
+Vom alege doar primele 5 categorii de varsta, intrucat "Less than 18 years", "More than 65 years" si "Prefer not to say" nu consider a fi relevante pentru aceasta analiza. Dupa selectarea acestora, ne vom crea un set de date filtrate pe care il vom utiliza in continuare. 
+```{r}
+age <- c("18-24 years old", "25-34 years old", "35-44 years old", "45-54 years old", "55-64 years old")
+# length(age)
+
+date2022filtrate <- date2022 %>%
+  filter(Age %in% age)
+```
+
+```{r}
+# View(date2022filtrate)
+dim(date2022filtrate)
+
+table(date2022filtrate$Age)
+```
+
+Pentru o mai usoara vizualizare a categoriilor de varsta alese, le vom schimba etichetele si retine intr-o noua variabila denumita Age1, ce va fi ulterior folosita in modelul de regresie logistica.
+
+- 18-24 years old -> 18-24
+
+- 25-34 years old -> 25-34
+
+- 35-44 years old -> 35-44
+
+- 45-54 years old -> 45-54
+
+- 55-64 years old -> 55-64
+
+```{r}
+date2022filtrate$Age1 <- factor(date2022filtrate$Age,
+                                labels = c("18-24", "25-34", "35-44", "45-54", "55-64"))
+
+```
+
+```{r include=FALSE}
+table(date2022filtrate$Age1)
+
+# verif daca am atribuit bine etichetele
+table(date2022filtrate$Age, date2022filtrate$Age1)
+dim(date2022filtrate)
+```
+\
+2. Variabila EdLevel:
+```{r}
+table(date2022filtrate$EdLevel)
+```
+Asemanator procesului aplicat anterior variabilei Age, vom schimba etichetele si le vom retine intr-o noua variabila denumita EdLevel1, astfel: 
+
+- Associate degree (A.A., A.S., etc.) - AD 
+
+- Bachelor’s degree (B.A., B.S., B.Eng., etc.) - BD 
+
+- Master’s degree (M.A., M.S., M.Eng., MBA, etc.) - MD 
+
+- Other doctoral degree (Ph.D., Ed.D., etc.) - PhD 
+
+- Primary/elementary school - P/ES 
+
+- Professional degree (JD, MD, etc.) - PD 
+
+- Secondary school (e.g. American high school, German Realschule or Gymnasium, etc.) - SS 
+
+- Some college/university study without earning a degree - C/UwD 
+
+- Something else - se 
+
+```{r}
+date2022filtrate$EdLevel1 <- factor(date2022filtrate$EdLevel, 
+                                    labels = c("AD", "BD", "MD", "PhD", "P/ES", "PD", "SS", "C/UwD", "se"))
+```
+
+```{r include=FALSE}
+table(date2022filtrate$EdLevel1)
+
+# verif daca am atribuit bine etichetele 
+table(date2022filtrate$EdLevel, date2022filtrate$EdLevel1)
+dim(date2022filtrate)
+```
+
+3. Variabila YearsCodePro:
+```{r}
+table(date2022filtrate$YearsCodePro)
+```
+
+```{r include=FALSE}
+attach(date2022filtrate)
+```
+Observam faptul ca avem doua variabile categoriale, si anume "Less than 1 year" si "More than 50 years". Ne dorim ca variabila YearsCodePro sa fie de tip numeric, astfel ca vom modifica cele doua valori in felul urmator: 
+
+- Less than 1 year va fi inlocuita cu 0.5 
+
+- More than 50 years va fi inlocuita cu 51 
+
+De asemenea, variabila contine si valori NA pentru acei respondenti care nu au oferit niciun raspuns la intrebare, acestea urmand sa fie inlocuite cu 0. Noile valori vor fi retinute intr-o noua variabila denumita YearsCodePro1.
+```{r}
+date2022filtrate <- date2022filtrate %>%
+  mutate(YearsCodePro1 = as.numeric(case_when(YearsCodePro == "Less than 1 year" ~ "0.5",
+                                              YearsCodePro == "More than 50 years" ~ "51",
+                                              is.na(YearsCodePro) == TRUE ~ "0",
+                                              TRUE ~ YearsCodePro)))
+```
+
+```{r include=FALSE}
+table(date2022filtrate$YearsCodePro1)
+```
+Reprezentam grafic frecventa de aparitie prin intermediul unei histograme. Aceasta ne va ajuta sa grupam pe categorii anii de codat notati de catre respondenti. 
+```{r}
+date2022filtrate %>%
+  filter(!is.na(YearsCodePro1)) %>% 
+  ggplot() +
+  geom_histogram(aes(x = YearsCodePro1), color = "darkviolet", fill = "darkturquoise", na.rm = TRUE, binwidth = 1) +
+  labs(x = "YearsCodePro",
+       y = "Frecventa",
+       caption = "Proiect AMD - BDSA") +
+  ggtitle("Histograma variabilei YearsCodePro") + 
+  theme_gray(base_size = 12) + 
+  theme(plot.title = element_text(hjust = 0.5, size = 20, color = "cadetblue4", face = "bold"))
+```
+
+In histograma anterioara se observa faptul ca cele mai multe raspunsuri au fost inregistrate pentru valoarea 0, fapt datorat in mare parte si inlocuirii valorilor NA tot cu 0. Dupa analizarea histogramei, se vor forma urmatoarele categorii de ani: 0-10 ani, 11-20 ani, 21-30 ani si peste 30 ani; acestea vor fi retinute intr-o noua variabila denumita YearsCodePro2.
+```{r}
+date2022filtrate <- date2022filtrate %>%
+  mutate(YearsCodePro2 = as.factor(case_when(YearsCodePro1 <= 10 ~ "0-10",
+                                             YearsCodePro1 <= 20 ~ "11-20",
+                                             YearsCodePro1 <= 30 ~ "21-30", 
+                                             YearsCodePro1 > 30 ~ "30+")))
+```
+\
+4. Variabila WorkExp:
+```{r include=FALSE}
+schema2022$question[schema2022$qname == "WorkExp"]
+table(date2022filtrate$WorkExp)
+```
+Pentru a determina nivelul maxim de experienta al respondentilor, utilizam statisticile descriptive si observam ca acesta atinge valoarea de 50 ani.
+```{r}
+summary(date2022filtrate$WorkExp)
+```
+
+Aplicam functia de densitate variabilei WorkExp si o reprezentam grafic pentru a putea repartiza anii de experienta ai developerilor pe categorii. 
+```{r}
+date2022filtrate %>%
+  filter(!is.na(WorkExp)) %>%  
+  ggplot(aes(WorkExp)) +
+  geom_density(color = "lightcyan4", fill = "indianred", adjust = 5, alpha = .6) +
+  labs(x = "WorkExp",
+       y = "Densitate",
+       caption = "Proiect AMD - BDSA") +
+  ggtitle("Numarul de ani de experienta in domeniu") + 
+  theme_gray(base_size = 12) + 
+  theme(plot.title = element_text(hjust = 0.5, size = 20, color = "cadetblue4", face = "bold"))
+```
+
+Din graficul anterior stabilim urmatoarele categorii pentru numarul de ani de experinta; acestea vor fi memorate intr-o noua variabila denumita WorkExp1:
+```{r}
+date2022filtrate <- date2022filtrate %>% 
+  mutate(WorkExp1 = as.factor(case_when(WorkExp < 5 ~ "0-4",
+                                        WorkExp <= 10 ~ "5-10",
+                                        WorkExp <= 20 ~ "11-20",
+                                        WorkExp > 20 ~ "20+")))
+```
+
+```{r include=FALSE}
+table(date2022filtrate$WorkExp1)
+```
+\
+5. Variabila RemoteWork:
+```{r}
+table(date2022filtrate$RemoteWork)
+```
+
+Fiind o variabila categoriala, vom proceda asemanator ca pentru variabilele Age si EdLevel, schimband etichetele in felul urmator: 
+
+- Full in-person - FIP 
+
+- Fully remote - FR 
+
+- Hybrid (some remote, some in-person) - H
+
+```{r}
+date2022filtrate$RemoteWork1 <- factor(date2022filtrate$RemoteWork,
+                                       labels = c("FIP", "FR", "H"))
+```
+
+```{r include=FALSE}
+table(date2022filtrate$RemoteWork1)
+
+# verif daca am atribuit bine etichetele
+table(date2022filtrate$RemoteWork, date2022filtrate$RemoteWork1)
+dim(date2022filtrate)
+
+attach(date2022filtrate)
+```
+
+Asa cum am mentionat anterior, in modelul de regresie logistica vor fi utilizate variabilele prelucrate, si anume: Age1, EdLevel1, YearsCodePro2, WorkExp1 si RemoteWork1. Generam statisticile descriptive ale noilor variabile pentru a vedea informatii referitoare la valorile minime/maxime, media etc. si, de asemenea, daca exista valori NA.
+```{r}
+summary(date2022filtrate %>% 
+          select(c(Age1, EdLevel1, YearsCodePro2, WorkExp1, RemoteWork1)))
+```
+Din statisticle descriptive de mai sus reiese faptul ca 3 dintre cele 5 variabile ce se doresc a fi utilizate in model contin valori NA. Acestea vor fi ulterior eliminate din model, intrucat nu pot fi utilizate in regresia logistica intrucat nu au sens. \
+Urmatorul pas consta in definirea variabilei Wellpaid pe baza variabilei ConvertedCompYearly care retine salariul anual declarat de catre respondenti.
+```{r}
+summary(date2022filtrate$ConvertedCompYearly)
+```
+Verificam densitatea de repartie a variabilei ConvertedCompYearly, reprezentand salariul anual, printr-o reprezentare grafica. Valorile sunt mult prea mari pentru a fi usor de vizualizat, astfel ca reprezentam grafic frecventa de aparitie a valorilor salariului anual, eliminand valorile NA.
+```{r include=FALSE}
+date2022filtrate %>%
+  filter(!is.na(ConvertedCompYearly)) %>% 
+  ggplot(aes(ConvertedCompYearly)) +
+  geom_density(color = "forestgreen", fill = "khaki1", adjust = 5) +
+  labs(x = "ConvertedCompYearly",
+       y = "Densitate",
+       caption = "Proiect AMD - BDSA") +
+  ggtitle("Densitatea de repartitie a salariului anual") + 
+  theme_gray(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20, color = "cadetblue4", face = "bold"))
+```
+
+```{r}
+date2022filtrate %>%
+  filter(!is.na(ConvertedCompYearly)) %>%  
+  ggplot() +
+  geom_histogram(aes(x = WorkExp),color = "mediumvioletred", fill = "mistyrose2", na.rm = TRUE, binwidth = 1) +
+  labs(x = "ConvertedCompYearly",
+       y = "Frecventa",
+       caption = "Proiect AMD - BDSA") +
+  ggtitle("Salariul anual incasat de developeri") + 
+  theme(plot.title = element_text(hjust = 0.5, size = 20, color = "cadetblue4", face = "bold"))
+```
+
+```{r}
+dim(date2022filtrate)
+```
+
+Prelucram variabila ConvertedCompYearly prin eliminarea din continutul acesteia a valorilo NA pentru a nu intampina probleme in modelarea regresiei logistice: 
+```{r}
+date2022model <- date2022filtrate %>%
+  filter(!is.na(ConvertedCompYearly))
+```
+
+```{r}
+# View(date2022model)
+dim(date2022model)
+```
+
+In urma efectuarii acestei prelucrari, putem incepe construirea variabilei Wellpaid, astfel: 
+
+- Daca salariul anual este mai mic decat valoarea medianei sale, atunci va fi incadrat in categoria Not Wellpaid notata cu 0
+
+- Daca salariul anual este mai mare sau egal cu valoarea medianei sale, atunci va fi incadrat in categoria Wellpaid notata cu 1
+
+```{r}
+date2022model <- date2022model %>%
+  mutate(Wellpaid = as.factor(case_when(ConvertedCompYearly < median(ConvertedCompYearly) ~ 0,
+                                        ConvertedCompYearly >= median(ConvertedCompYearly) ~ 1)))
+``` 
+
+```{r include=FALSE}
+table(date2022model$Wellpaid)
+```
+
+Analizam statisticile descriptive ale variabilelor prelucrate anterior si observam faptul ca avem 18853 de respondenti care se afla in categoria Not Wellpaid (0) si 18861 de respondenti care se afla in categoria Wellpaid (1). 
+```{r}
+summary(date2022model %>%
+          select(c(Wellpaid, Age1, EdLevel1, YearsCodePro2, WorkExp1, RemoteWork1)))
+```
+
+```{r include=FALSE}
+attach(date2022model)
+```
+
+Pentru a putea crea regresia logistica, trebuie eliminate valorile NA din cadrul variabilelor Age1, EdLevel1 si RemoteWork1, asa cum am mentionat anterior:
+```{r}
+date2022na <- date2022model %>%
+  filter(!is.na(Age1), !is.na(EdLevel1), !is.na(YearsCodePro2), !is.na(WorkExp1), !is.na(RemoteWork1))
+```
+
+Dat fiind faptul ca toate variabilele au fost prelucrate, putem construi modelul de regresie logistica. 
+```{r}
+model_rl <- glm(Wellpaid ~ Age1 + EdLevel1 + YearsCodePro2 + WorkExp1 + RemoteWork1,
+                family = "binomial", 
+                data = date2022na)
+
+summary(model_rl)
+```
+
+```{r include=FALSE}
+# View(model_rl)
+```
+
+Statisticile descriptive ale modelului de regresie logistica prezinta informatii importante referitoare la devianta modelului. Astfel, daca devianta reziduala este mai mica decat devianta nula, putem afirma faptul ca raspunsul prognozat un model in care se adauga variabilele independente este mai bun decat raspunsul dat de un model in care apare doar variabila dependenta. In cazul regresiei noastre, remarcam ca valoarea specifica Residual deviance, egala cu 32581, este mai mica decat valoarea Null deviance, egala cu 37279.
+
+In urma generarii modelului de regresie logistica si a statisticilor descriptive corespunzatoare acestuia, urmatoarea etapa consta in interpretarea coeficientilor modelului. Asa cum am observat in output-ul de mai sus, apelarea statisticilor descriptive ale modelului ofera informatii referitoare la valorile coeficientilor, insa acestea sunt sub forma de logaritm natural. Astfel, este necesara aplicarea functia exp() pentru a genera valorile interpretabile ale regresiei logistice.
+```{r}
+exp(coef(model_rl))
+```
+
+In ceea ce priveste variabila Age1, categoria de baza pentru referirea celorlalte variabile contine varstele 18-24 ani. Astfel spus, observam faptul ca developerii aflati in segmentul 25-34 ani au sanse cu aproximativ 58% mai mari de a se incadra in categoria Wellpaid fata de categoria de baza. In ceea ce priveste developerii cu varstele cuprinse intre 35-44 ani si 45-54 ani, sansele de a se regasi in categoria Wellpaid cresc cu o probablitate de aproximativ 98%, respectiv 105.2% fata de segmentul de baza. Remarcam faptul ca, odata cu inaintarea in varsta si incadrarea intr-o categorie diferita cresc sansele de a fi bine platit, pentru respondentii avand varsta intre 55-64 observandu-se o crestere a sanselor de incadrare in aceasta categorie cu o probabilitate de 204.7% , acestia fiind cei care au cea mai mare experienta in domeniu.\
+
+Categoria de referinta in cazul variabilei EdLevel este Associate degree (A.A., A.S., etc.), notata cu eticheta AD in modelul de regresie. Analizand valorile inregistrate de catre coeficienti, remarcam ca, in cazul developerilor care au studii superioare de licenta, master si doctorat, sansele de a fi bine platiti cresc cu o probabilitate de 19.7%, 4.6% si, respectiv 64% fata de categoria de baza. Astfel spus, cu cat nivelul de educatie este mai mare, pentru respondentii care au investit in acest aspect, cu atat cresc si sansele de a se incadra in categoria Wellpaid. O crestere semnificativ mare, de 14.7%, este regasita si in cazul nivelului de educatie de scoala primara, insa, daca ne uitam la valoarea p-value in output-ul statisticilor descriptive, observam faptul ca nu este semnificativa. Asa cum era de asteptat in cazul variabilelor ramase, cu cat nivelul de educatie este mai mic, cu atat sansele ca un developer sa fie bine platit cresc foarte putin. Cele mai mici valori inregsitrate se regasesc in situatiile in care respondentii au doar diploma profesioanala, care aduce o crestere a sanselor cu o probabilitate de doar 3.5%, cei care au terminat doar scoala gimnaziala, care aduce o crestere de aproximativ 7%. Respondentii care s-au inscris la universitate, insa nu si-au luat diploma au sanse de a fi bine platiti cu o probabilitate de 8.1% mai mare fata de categoria de baza. \
+
+In cazul variabilei YearsCodePro2, categoria de baza este de 0-10 ani, odata cu intrarea in cea de-a doua categorie, si anume 11-20 ani, sansele ca un developer sa fie bine platit cresc cu o probabilitate de 35.4%. Odata cu incadrarea intr-o noua categorie de ani, cresc si sansele de incadrare in segmentul Wellpaid, pentru cei cu o experienta de codat la locul de munca de 21-30 ani cu o probabilitate de 65.2%, respectiv pentru cei care au peste 30 ani de experienta, cu o probabilitate de aproximativ 87%. Se considera ca, odata cu inaintarea in varsta, creste si incadrarea in categoria de ani de experienta, insa exista multi developeri care pe parcursul carierei pot sa schimbe limbajul de programare folosit la locul de munca si, in acest fel, ei se pot avea varsta cuprinsa intre 35-44 ani insa sa fi utilizat respectivul limbaj de programare pe o perioada de 5 ani. \
+
+Variabila WorkExp are drept categorie de baza nivelul de experienta de 0-4 ani. Observam faptul ca developerii cu o experienta cuprinsa intre 5-10 ani au sanse de a fi bine platiti cu o probabilitate de 109.8% mai mare fata de cei care au cea mai mica experienta. In ceea ce priveste segmentul de experienta de 11-20 ani, sansele de incadrare in categoria Wellpaid cresc cu o probabilitate de 293.7% fata de categoria de baza. Remarcam faptul ca, odata cu cresterea experientei in domeniu, creste si sansa de a fi bine platit pe baza acesteia. Astfel, respondentii care au o experienta de peste 20 ani ca developeri sunt cei mai bine platiti, sansele de a fi incadrati in aceasta categorie crescand cu o probabilitate de aproximativ 401%.\
+
+In ceea ce priveste variabila RemoteWork1, observam drept categorie de baza Full-in person, notata cu eticheta FIP. In referinta cu aceasta, putem afirma faptul ca sansele de a fi bine platiti a developerilor care lucreaza in permanenta de acasa sau a celor care lucreaza in mod hibrid cresc cu o probabilitate de 307%, respectiv 218%. Angajatii care lucreaza in regim remote sunt mai bine platiti pe baza considerentului ca, fiind acasa, productivitatea creste si isi ocupa mult mai mult din timp rezolvarii problemelor si a task-urilor intalnite la locul de munca.\
+
+In urma interpretarii coeficientilor modelului de regresie logistica, vom analiza cat de bun este acesta prin construirea curbei ROC si a determinarii valorii ariei de sub curba ROC (AUC - Area Under the Curve). Ulterior, vom construi matricea de confuzie corespunzatoare modelului. \
+\
+In construirea curbei ROC, primul pas consta in determinarea probabilitatilor estimate ale regresiei logistice si codificarea predicitiilor din clasele Wellpaid si Not Wellpaid cu 1, respectiv 0.
+```{r}
+pred <- predict(model_rl, type = "response")
+length(pred) 
+summary(pred)
+```
+
+Din statisticile descriptive generate anterior pentru probabilitatile estimate ale modelului, observam ca avem un prag egal cu 0.49, valoare ce corespunde medianei. Astfel, vom imparti predictiile asemanator cu procesul utilizat in crearea variabilei Wellpaid pe baza salariului anual: 
+
+- Daca valoarea probabilitatii estimate este mai mare decat pragul ales, atunci va fi incadrata in clasa 1
+
+- Daca valoarea probabilitatii estimate este mai mica decat pragul ales, atunci va fi incadrata in clasa 0
+
+```{r}
+y_pred_num <- ifelse(pred > 0.49, 1, 0)
+table(y_pred_num)
+```
+
+Dupa efectuarea repartitiei valorilor in functie de pragul de 0.49, observam ca avem 13430 de respondenti ce se afla in categoria Not Wellpaid si 13473 dintre acestia au fost incadrati in categoria Wellpaid, esantionul fiind impartit aproape in mod egal.
+
+```{r}
+y_pred <- factor(y_pred_num, labels = c(0, 1))
+predictie <- prediction(pred, date2022na$Wellpaid)
+```
+
+In urma atribuirii respondentilor in clasele corespunzatoare, urmeaza sa construim curba ROC si sa determinam valoarea ariei de sub curba ROC.
+```{r}
+predictie %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot(colorize = T, lwd = 7, main = "Curba ROC a modelului de regresie logistica")
+```
+
+Valoarea ariei de sub graficul curbei ROC este egala cu 0.73, asa cum observam in output-ul de mai jos. AUC masoara performanta tuturor pragurilor de clasificare posibile si trebuie sa aiba o valoare cat mai mare pentru ca modelul ales sa fie considerat bun. Astfel, modelul de regresie logistica are o probabilitate de aproximativ 73%, corespunzatoare unei clasificari moderate de a plasa variabilele in zona de true positiv rate, fata de o plasate a lor in zona de false positive rate.
+```{r}
+auc_rl <- performance(predictie, "auc")@y.values[[1]] 
+auc_rl
+```
+
+Pentru a verifica acuratetea previzionarii efectuate, construim matricea de confuzie corespunzatoare variabilei Wellpaid. Pe linie regasim elementele previzionate, pe coloana etichetele reale din setul de antrenare, iar pe diagonala principala se afla observatiile previzionate corect. Astfel, putem afirma ca 9168 dintre respondenti au fost corect incadrati in clasa Not Wellpaid, pe cand 4621 dintre acestia au fost clasificati ca fiind Wellpaid, desi nu sunt bine platiti. Asemanator, se observa faptul ca 8852 dintre developeri au fost corect incadrati in clasa Wellpaid, iar 4263 au fost clasificati ca fiind Not Wellpaid, desi sunt bine platiti. \
+In plus, regasim informatii referitoare la acuratetea modelului de regresie logistica, acesta avand o acuratete de aproximativ 67%, deci un model relativ bun.
+```{r include=FALSE}
+date2022na$Wellpaid <- factor(date2022na$Wellpaid, level = c(0, 1))
+```
+
+```{r}
+confusionMatrix(data = y_pred, as.factor(date2022na$Wellpaid))
+```
+\
+\
+**Partea a III-a**. Aplicarea unui arbore de clasificare folosind pachetul rpart. Vom utiliza aceleasi variabile ca si in cazul modelului de regresie definit anterior.
+```{r include=FALSE}
+library(rpart)
+library(rpart.plot)
+library(ROCR)
+
+set.seed(1)
+```
+
+In ceea ce priveste lucrul cu arborii de clasificare, este necesara extragerea unui set de date de antrenare continand 80% din setul de date complet. Dimensiunea setului de date prelucrat este egala cu 26903, 80% din acesta fiind egal cu 21522.4. Rotunjim si retinem in variabila de antrenare doar raspunsurile oferite de 21522 developeri.
+
+```{r eval=FALSE, include=FALSE}
+0.8 * 26903
+```
+
+```{r}
+set_antrenare <- sample(1:26903, 21522, replace = F)
+```
+
+Cream arborele pe baza acelorasi variabilele utilizate in modelul de regresie, si anume: Wellpaid, Age1, EdLevel1, YearsCodPro2, WorkExp si RemoteWork1, precum si a setului de date ce nu contine valori NA din cadrul celor trei variabile mentionate anterior. De asemenea, din acest set de date, vor fi selectati doar cei 80% dintre respondenti, adica setul de antrenare generat anterior. 
+```{r}
+arbore <- rpart(Wellpaid ~ Age1 + EdLevel1 + YearsCodePro2 + WorkExp1 + RemoteWork1,
+                data = date2022na[set_antrenare, ],
+                method = "class",
+                parms = list(split = "information"),
+                control = rpart.control(cp = 0.004))
+summary(arbore)
+```
+
+```{r}
+printcp(arbore)
+plotcp(arbore)
+```
+
+```{r}
+```
+
+```{r}
+prp(arbore, type = 3, extra = 108, box.palette = "BuPu", under = TRUE, fallen.leaves = F, 
+    main = "Arbore de clasificare")
+```
+
+Din reprezentarea grafica a arborelui de clasificare observam faptul ca, pornind de la nodul radacina, se realizeaza prima impartire a setului de date in doua parti dupa variabila WorkExp, astfel: daca respondentii se afla in categoria de experienta de 0-4 ani sau in categoria de 5-10 ani, ne ducem pe ramura "yes" in continuarea analizei; in caz contrar, pentru cei aflati in categoriile de varsta 11-20 si peste 20 ani, urmarim traseul "no". \
+Astfel, developerii cu o experienta de 0-4 ani in domeniu au fost incadrati corect in clasa Not Wellpaid cu o probabilitate de 75%. \
+Cei din categoria de 5-10 ani, care lucreaza full in-person au fost incadrati corect ca fiind neplatiti cu o probabilitate de 74%. \
+De asemenea, developerii care lucreaza de acasa sau in stil hibdrid si au varsta cuprinsa intre 35-44 ani sau 45-54 ani au fost incadrati corect cu o probabilitate de 60%. \
+Cei care au varstele cuprinse intre 18-24 ani, 25-34 ani si 55-64 ani si au un nivel scazut de educatie sunt clasificati ca a nu fi bine platiti cu o probabilitate de 57%.\
+Dintre cei care au diploma de licenta, doctorat sau scoala primara si lucreaza in regim hibrid, au fost clasificati corect ca fiind Not Wellpaid cu o probabilitate de 52%, iar cei care lucreaza full in-person sau remote au fost clasificati corect ca a fi bine platiti cu o probabilitate de 54%. 
+
+Asemanator cu ceea ce s-a realizat anterior pentru modelul de regresie, vom genera curba ROC a arborelui de clasificare si vom determina valoarea ariei de sub aceasta folosindu-ne de setul de testare continand din cei 20% de respondenti ramasi din intreg setul de date.
+```{r}
+pred1 <- predict(arbore, newdata = date2022na[-set_antrenare, ], type = "prob")[, 2]
+predictie1 <- prediction(pred1, date2022na[-set_antrenare, ]$Wellpaid)
+```
+
+```{r}
+predictie1 %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot(colorize = T, lwd = 7, main = "Curba ROC a arborelui de clasificare")
+```
+
+Asemanator modelului de regresie logistica, analizam valoarea ariei de sub graficul curbei ROC care este egala cu 0.69, asa cum observam in output-ul de mai jos. AUC masoara performanta tuturor pragurilor de clasificare posibile si trebuie sa aiba o valoare cat mai mare pentru ca modelul ales sa fie considerat bun. Astfel, modelul de regresie logistica are o probabilitate de aproximativ 69%, corespunzatoare unei clasificari slabe spre moderate de a plasa variabilele in zona de true positiv rate, fata de o plasate a lor in zona de false positive rate.
+```{r}
+auc_ar <- performance(predictie1, "auc")@y.values[[1]] 
+auc_ar
+```
+
+```{r eval=FALSE, include=FALSE}
+26903 - 21522
+```
+
+```{r include=FALSE}
+pred_ar = rep(1, 5381)
+pred_ar[pred1 < 0.6] <- 0
+pred_ar = factor(pred_ar, level = c(0, 1))
+```
+
+Dupa efectuarea predictiilor pe setul de testare pentru clasele 0 - Not Wellpaid si 1 - Wellpaid, remarcam faptul ca 3169 dintre respondenti au fost incadrati ca nefiind bine platiti, iar 2212 dintre acestia ca fiind bine platiti.
+```{r}
+table(pred_ar)
+```
+
+```{r include=FALSE}
+library(caret)
+```
+
+Pentru a verifica acuratetea previzionarii efectuate, construim matricea de confuzie corespunzatoare variabilei Wellpaid. Pe linie regasim elementele previzionate, pe coloana etichetele reale din setul de antrenare, iar pe diagonala principala se afla observatiile previzionate corect. Astfel, putem afirma ca 2020 dintre respondentii din setul de testare au fost corect incadrati in clasa Not Wellpaid, pe cand 743 dintre acestia au fost clasificati ca fiind Wellpaid, desi nu sunt bine platiti. Asemanator, se observa faptul ca 1469 dintre developeri au fost corect incadrati in clasa Wellpaid, pe cand 1149 au fost clasificati ca fiind Not Wellpaid, desi sunt bine platiti. \
+In plus, regasim informatii referitoare la acuratetea modelului de regresie logistica, acesta avand o acuratete de aproximativ 65%, deci un model relativ bun.
+```{r include=FALSE}
+date2022na$Wellpaid <- factor(date2022na$Wellpaid, level = c(0, 1))
+pred_ar = factor(pred_ar)
+```
+
+```{r}
+confusionMatrix(pred_ar, date2022na[-set_antrenare, ]$Wellpaid, mode = "everything", positive = "1")
+```
+\
+\
+**Partea a IV-a**. Compararea rezultatelor modelului de regresie logistica si a arborelui de clasificare.
+
+- Modelul de regresie logistica:
+
+Aria de sub curba ROC este de aproximativ 73%, sugerand faptul ca a fost obtinut un clasificator de tip true positive rate mai bun decat cel de tip false positive rate. Am observat faptul ca acuratetea clasificarii modelului este de aproximativ 67%. 
+
+- Arborele de clasificare:
+
+Aria de sub curba ROC este de aproximativ 69%, sugerand faptul ca a fost obtinut un clasificator de tip true positive rate mai bun decat cel de tip false positive rate. Am observat o acuratete a clasificarii arborelui egala cu aproximativ 65%. \
+Pe baza valorilor foarte apropiate obtinute pentru AUC si acuratete atat in cazul regresiei logistice, cat si a arborelui de clasificare, putem afirma faptul ca modelul de regresie este mai bun decat arborele, chiar daca acuratetea si AUC nu sunt cu mult mai mari. 
+```{r}
+par(mfrow = c(1, 2))
+
+predictie %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot(colorize = T, lwd = 7, main = "Curba ROC - regresie logistica")
+
+predictie1 %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot(colorize = T, lwd = 7, main = "Curba ROC -  arbore clasificare")
+```
+
+
+
+
+
